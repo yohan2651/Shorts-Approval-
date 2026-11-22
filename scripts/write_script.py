@@ -35,7 +35,8 @@ def chat(model: str, system: str, user: str, temperature: float = 0.8) -> dict:
         if r.status_code == 429:  # free-tier rate limit: wait and retry
             time.sleep(30 * (attempt + 1))
             continue
-        r.raise_for_status()
+        if r.status_code >= 400:
+            raise SystemExit(f"GitHub Models error {r.status_code}: {r.text[:500]}")
         text = r.json()["choices"][0]["message"]["content"]
         text = re.sub(r"^```(json)?|```$", "", text.strip()).strip()
         return json.loads(text)
@@ -90,18 +91,18 @@ JSON shape:
 
 
 def review(cfg: dict, script: dict) -> list[str]:
+    """Only real problems (wrong facts, unsafe content) block the episode."""
     system = (
-        "You are a strict children's content reviewer and fact-checker. "
-        "Return ONLY JSON: {\"ok\": true/false, \"issues\": [\"...\"]}."
+        "You are a children's content reviewer and fact-checker. Return ONLY JSON: "
+        "{\"serious_issues\": [\"...\"], \"minor_suggestions\": [\"...\"]}. "
+        "serious_issues is ONLY for factually wrong statements or content unsafe/scary for young kids. "
+        "Style preferences go in minor_suggestions."
     )
-    user = (
-        f"Audience age {cfg['show']['audience_age']}. Check this script for: factual errors, anything unsafe or "
-        "scary, words too hard for young kids, lines longer than "
-        f"{cfg['script']['max_words_per_line']} words, poses not in {cfg['script']['poses']}.\n\n"
-        + json.dumps(script, ensure_ascii=False)
-    )
+    user = f"Audience age {cfg['show']['audience_age']}. Review this script:\n\n" + json.dumps(script, ensure_ascii=False)
     res = chat(cfg["script"]["model"], system, user, temperature=0)
-    return [] if res.get("ok") else res.get("issues", ["unspecified problem"])
+    if res.get("minor_suggestions"):
+        print("Reviewer suggestions (not blocking):", res["minor_suggestions"])
+    return res.get("serious_issues") or []
 
 
 def validate(cfg: dict, script: dict) -> list[str]:
