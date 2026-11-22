@@ -19,7 +19,8 @@ def chat(model: str, system: str, user: str, temperature: float = 0.8) -> dict:
     headers = {
         "Authorization": f"Bearer {env('GITHUB_TOKEN')}",
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
     body = {
         "model": model,
@@ -31,13 +32,17 @@ def chat(model: str, system: str, user: str, temperature: float = 0.8) -> dict:
         ],
     }
     for attempt in range(4):
-        r = requests.post(API, headers=headers, json=body, timeout=120)
+        r = requests.post(API, headers=headers, json=body, timeout=120, allow_redirects=False)
+        print(f"GitHub Models HTTP {r.status_code}, {len(r.content)} bytes, type={r.headers.get('content-type')}")
         if r.status_code == 429:  # free-tier rate limit: wait and retry
             time.sleep(30 * (attempt + 1))
             continue
         if r.status_code >= 400:
             raise SystemExit(f"GitHub Models error {r.status_code}: {r.text[:500]}")
-        text = r.json()["choices"][0]["message"]["content"]
+        try:
+            text = r.json()["choices"][0]["message"]["content"]
+        except Exception:
+            raise SystemExit(f"Unexpected reply from GitHub Models: {r.status_code} {dict(r.headers)} {r.text[:400]!r}")
         text = re.sub(r"^```(json)?|```$", "", text.strip()).strip()
         return json.loads(text)
     raise SystemExit("GitHub Models rate limit hit repeatedly; try again later.")
