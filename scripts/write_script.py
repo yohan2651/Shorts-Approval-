@@ -43,17 +43,25 @@ def chat(model: str, system: str, user: str, temperature: float = 0.8) -> dict:
         b = dict(body)
         if "azure.com" in url:
             b["model"] = model.split("/")[-1]  # old endpoint uses bare model names
+        r = None
         for attempt in range(4):
-            r = _post(url, extra, b)
+            try:
+                r = _post(url, extra, b)
+            except requests.RequestException as e:
+                errors.append(f"{url} -> {type(e).__name__}")
+                print("Model endpoint failed:", errors[-1], flush=True)
+                break
             if r.status_code == 429:  # free-tier rate limit: wait and retry
                 time.sleep(30 * (attempt + 1))
                 continue
             break
+        if r is None:
+            continue
         try:
             text = r.json()["choices"][0]["message"]["content"]
         except Exception:
             errors.append(f"{url} -> HTTP {r.status_code} {r.headers.get('content-type')} {r.text[:300]!r}")
-            print("Model endpoint failed:", errors[-1])
+            print("Model endpoint failed:", errors[-1], flush=True)
             continue
         if not _working:
             _working.append((url, extra))

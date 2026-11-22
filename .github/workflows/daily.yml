@@ -31,6 +31,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PYTHONUNBUFFERED: "1"
       INPUT_EPISODE: ${{ inputs.episode }}
       INPUT_FEEDBACK: ${{ inputs.feedback }}
     steps:
@@ -117,7 +118,7 @@ jobs:
           # show the error as an annotation on the run page
           MSG=$(tail -n 25 build/log.txt | sed -e ':a;N;$!ba' -e 's/%/%25/g;s/\r//g;s/\n/%0A/g')
           echo "::error title=Episode failed::$MSG"
-          { echo "Today's episode failed."; echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"; tail -n 40 build/log.txt; } > state/last_error.txt
+          { echo "Today's episode failed."; echo "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"; tail -n 150 build/log.txt; } > state/last_error.txt
           if [ -z "$TELEGRAM_BOT_TOKEN" ]; then echo "::warning::TELEGRAM_BOT_TOKEN secret is empty"; fi
           if [ -z "$TELEGRAM_CHAT_ID" ]; then echo "::warning::TELEGRAM_CHAT_ID secret is empty"; fi
           if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
