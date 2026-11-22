@@ -12,16 +12,22 @@ import requests
 
 from common import ROOT, episode_dir, load_config, past_titles, today_id, write_json, env, read_json
 
-API = "https://models.github.ai/inference/chat/completions"
+ENDPOINTS = [
+    # (url, extra headers) — tried in order until one returns a proper JSON answer
+    ("https://models.github.ai/inference/chat/completions",
+     {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"}),
+    ("https://models.github.ai/inference/chat/completions", {"Accept": "application/json"}),
+    ("https://models.inference.ai.azure.com/chat/completions", {"Accept": "application/json"}),
+]
+_working: list = []
+
+
+def _post(url: str, extra: dict, body: dict):
+    headers = {"Authorization": f"Bearer {env('GITHUB_TOKEN')}", "Content-Type": "application/json", **extra}
+    return requests.post(url, headers=headers, json=body, timeout=120)
 
 
 def chat(model: str, system: str, user: str, temperature: float = 0.8) -> dict:
-    headers = {
-        "Authorization": f"Bearer {env('GITHUB_TOKEN')}",
-        "Content-Type": "application/json",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
     body = {
         "model": model,
         "temperature": temperature,
@@ -31,21 +37,30 @@ def chat(model: str, system: str, user: str, temperature: float = 0.8) -> dict:
             {"role": "user", "content": user},
         ],
     }
-    for attempt in range(4):
-        r = requests.post(API, headers=headers, json=body, timeout=120, allow_redirects=False)
-        print(f"GitHub Models HTTP {r.status_code}, {len(r.content)} bytes, type={r.headers.get('content-type')}")
-        if r.status_code == 429:  # free-tier rate limit: wait and retry
-            time.sleep(30 * (attempt + 1))
-            continue
-        if r.status_code >= 400:
-            raise SystemExit(f"GitHub Models error {r.status_code}: {r.text[:500]}")
+    candidates = _working or ENDPOINTS
+    errors = []
+    for url, extra in candidates:
+        b = dict(body)
+        if "azure.com" in url:
+            b["model"] = model.split("/")[-1]  # old endpoint uses bare model names
+        for attempt in range(4):
+            r = _post(url, extra, b)
+            if r.status_code == 429:  # free-tier rate limit: wait and retry
+                time.sleep(30 * (attempt + 1))
+                continue
+            break
         try:
             text = r.json()["choices"][0]["message"]["content"]
         except Exception:
-            raise SystemExit(f"Unexpected reply from GitHub Models: {r.status_code} {dict(r.headers)} {r.text[:400]!r}")
+            errors.append(f"{url} -> HTTP {r.status_code} {r.headers.get('content-type')} {r.text[:300]!r}")
+            print("Model endpoint failed:", errors[-1])
+            continue
+        if not _working:
+            _working.append((url, extra))
+            print("Using model endpoint:", url)
         text = re.sub(r"^```(json)?|```$", "", text.strip()).strip()
         return json.loads(text)
-    raise SystemExit("GitHub Models rate limit hit repeatedly; try again later.")
+    raise SystemExit("No GitHub Models endpoint worked:\n" + "\n".join(errors))
 
 
 def next_topic() -> str | None:
