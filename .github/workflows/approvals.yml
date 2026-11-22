@@ -1,0 +1,55 @@
+name: Check Telegram approvals
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"   # every 10 minutes (GitHub may delay a few minutes)
+  workflow_dispatch:
+
+permissions:
+  contents: write   # save approval status
+  actions: write    # start a remake when you tap Redo
+
+concurrency:
+  group: repo-state
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: pip install -q requests pyyaml
+
+      - name: Read button taps and replies
+        id: tg
+        run: python scripts/telegram_bot.py check
+
+      - name: Save status
+        run: |
+          git config user.name "shorts-bot"
+          git config user.email "shorts-bot@users.noreply.github.com"
+          git add episodes state
+          git diff --cached --quiet || { git commit -q -m "Approval update"; git pull --rebase -q && git push -q; }
+
+      - name: Start remakes
+        if: steps.tg.outputs.redo != '[]' && steps.tg.outputs.redo != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REDO: ${{ steps.tg.outputs.redo }}
+        run: |
+          echo "$REDO" | python3 -c "
+          import json, sys, subprocess
+          for job in json.load(sys.stdin):
+              subprocess.run(['gh', 'workflow', 'run', 'daily.yml',
+                              '-f', 'episode=' + job['episode'],
+                              '-f', 'feedback=' + job['feedback']], check=True)
+          "

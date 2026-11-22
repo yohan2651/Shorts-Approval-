@@ -1,0 +1,4 @@
+# Optional: one topic per line. The bot uses the first unused line each day,
+# then marks it "# done:". Leave empty and the AI picks topics in your genre.
+why octopuses have three hearts
+how bees make honey

@@ -1,0 +1,104 @@
+name: Make daily episode
+
+on:
+  schedule:
+    - cron: "7 22 * * *"   # 06:07 Malaysia time every day
+  workflow_dispatch:
+    inputs:
+      episode:
+        description: "Episode id (YYYY-MM-DD). Leave empty for today."
+        required: false
+      feedback:
+        description: "Notes for a remake (optional)"
+        required: false
+
+permissions:
+  contents: write   # save episode files back to the repo
+  models: read      # free GitHub Models for script writing
+
+concurrency:
+  group: repo-state
+  cancel-in-progress: false
+
+jobs:
+  make:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      INPUT_EPISODE: ${{ inputs.episode }}
+      INPUT_FEEDBACK: ${{ inputs.feedback }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick episode id
+        id: ep
+        run: |
+          EP="$INPUT_EPISODE"
+          if [ -z "$EP" ]; then EP=$(TZ=Asia/Kuala_Lumpur date +%F); fi
+          if ! echo "$EP" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then echo "Bad episode id"; exit 1; fi
+          echo "id=$EP" >> "$GITHUB_OUTPUT"
+          STATUS=$(python3 -c "import json,sys;print(json.load(open('episodes/$EP/status.json')).get('status',''))" 2>/dev/null || true)
+          # on the daily schedule, don't remake an episode that already exists
+          if [ "${{ github.event_name }}" = "schedule" ] && [ -n "$STATUS" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"; echo "Episode $EP already $STATUS — skipping"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.ep.outputs.skip != 'true'
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install tools
+        if: steps.ep.outputs.skip != 'true'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          pip install -q -r requirements.txt
+
+      - name: Cache voice
+        if: steps.ep.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: build/voices
+          key: piper-${{ hashFiles('config.yaml') }}
+
+      - name: Make placeholder art if none yet
+        if: steps.ep.outputs.skip != 'true'
+        run: |
+          [ -f assets/poses/happy.png ] || python scripts/make_placeholders.py
+
+      - name: Write script
+        if: steps.ep.outputs.skip != 'true'
+        run: python scripts/write_script.py --episode "${{ steps.ep.outputs.id }}" --feedback "$INPUT_FEEDBACK"
+
+      - name: Make voice
+        if: steps.ep.outputs.skip != 'true'
+        run: python scripts/make_voice.py --episode "${{ steps.ep.outputs.id }}"
+
+      - name: Render video
+        if: steps.ep.outputs.skip != 'true'
+        run: python scripts/render_video.py --episode "${{ steps.ep.outputs.id }}"
+
+      - name: Keep a copy of the video (30 days)
+        if: steps.ep.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: episode-${{ steps.ep.outputs.id }}-${{ github.run_attempt }}-${{ github.run_id }}
+          path: build/${{ steps.ep.outputs.id }}/final.mp4
+          retention-days: 30
+
+      - name: Send to Telegram for approval
+        if: steps.ep.outputs.skip != 'true'
+        run: python scripts/telegram_bot.py send --episode "${{ steps.ep.outputs.id }}"
+
+      - name: Save episode files
+        if: steps.ep.outputs.skip != 'true'
+        run: |
+          git config user.name "shorts-bot"
+          git config user.email "shorts-bot@users.noreply.github.com"
+          git add episodes topics.txt assets state
+          git diff --cached --quiet || git commit -m "Episode ${{ steps.ep.outputs.id }}"
+          git pull --rebase -q && git push -q

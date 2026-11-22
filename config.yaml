@@ -1,0 +1,42 @@
+# ---------------------------------------------------------------
+#  Kids Shorts Factory — main settings
+#  Edit this file to change the show. No code changes needed.
+# ---------------------------------------------------------------
+
+show:
+  character_name: "Pip"            # your mascot's name
+  character_description: "a cheerful little round explorer who loves learning"
+  genre: "fun facts about animals"  # e.g. "numbers and counting", "colours", "space", "English-Malay words"
+  audience_age: "4-8"
+  language: "English"
+  # Words the character says at the start/end of every episode (keeps the show recognisable)
+  catchphrase_open: "Hi friends, it's Pip!"
+  catchphrase_close: "See you tomorrow, explorers!"
+
+script:
+  model: "openai/gpt-4.1-mini"     # GitHub Models (free tier)
+  min_lines: 6
+  max_lines: 9
+  max_words_per_line: 14
+  # Poses the writer may use. Each must exist as assets/poses/<name>.png
+  poses: ["happy", "wave", "point", "think", "wow", "cheer"]
+
+voice:
+  # Any Piper voice: https://huggingface.co/rhasspy/piper-voices
+  piper_voice: "en_US-amy-medium"
+  speed: 0.92                      # 1.0 = normal, lower = slower (kids like a bit slower)
+  pause_after_line: 0.35           # seconds of silence between lines
+
+video:
+  width: 1080
+  height: 1920
+  fps: 30
+  font: "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+  caption_size: 78
+  title_size: 60
+  music_volume: 0.12               # background music loudness (0 = off)
+
+posting:
+  # When you tap Approve, the bot sends you the final file + captions to post.
+  # Auto-posting to Instagram / YouTube is added in phase 2.
+  hashtags_default: ["#kids", "#learning", "#shorts", "#kidslearning"]
