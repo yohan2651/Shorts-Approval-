@@ -79,7 +79,7 @@ jobs:
 
       - name: Diagnose GitHub Models (temporary)
         if: steps.ep.outputs.skip != 'true'
-        run: python scripts/diag_models.py 2>&1 | tee -a build/log.txt || true
+        run: mkdir -p build; python scripts/diag_models.py 2>&1 | tee -a build/log.txt || true
 
       - name: Write script
         if: steps.ep.outputs.skip != 'true'
