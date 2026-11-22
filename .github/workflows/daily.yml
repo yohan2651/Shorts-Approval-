@@ -77,6 +77,10 @@ jobs:
         run: |
           [ -f assets/poses/happy.png ] || python scripts/make_placeholders.py
 
+      - name: Diagnose GitHub Models (temporary)
+        if: steps.ep.outputs.skip != 'true'
+        run: python scripts/diag_models.py 2>&1 | tee -a build/log.txt || true
+
       - name: Write script
         if: steps.ep.outputs.skip != 'true'
         run: set -o pipefail; mkdir -p build; python scripts/write_script.py --episode "${{ steps.ep.outputs.id }}" --feedback "$INPUT_FEEDBACK" 2>&1 | tee -a build/log.txt
