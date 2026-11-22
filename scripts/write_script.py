@@ -1,7 +1,7 @@
-"""Write today's episode script with GitHub Models, then fact/safety-check it.
+"""Write today's episode script with Google Gemini (free tier), then fact/safety-check it.
 
 Usage: python scripts/write_script.py [--episode YYYY-MM-DD] [--feedback "text"]
-Needs env GITHUB_TOKEN (the workflow's built-in token with `models: read`).
+Needs env GEMINI_API_KEY (free key from https://aistudio.google.com/apikey).
 """
 import argparse
 import json
@@ -12,63 +12,49 @@ import requests
 
 from common import ROOT, episode_dir, load_config, past_titles, today_id, write_json, env, read_json
 
-ENDPOINTS = [
-    # (url, extra headers) — tried in order until one returns a proper JSON answer
-    ("https://models.github.ai/inference/chat/completions",
-     {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2026-03-10"}),
-    ("https://models.github.ai/inference/chat/completions", {"Accept": "application/json"}),
-    ("https://models.inference.ai.azure.com/chat/completions", {"Accept": "application/json"}),
-]
+GEMINI = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 _working: list = []
 
 
-def _post(url: str, extra: dict, body: dict):
-    headers = {"Authorization": f"Bearer {env('GITHUB_TOKEN')}", "Content-Type": "application/json", **extra}
-    return requests.post(url, headers=headers, json=body, timeout=120)
-
-
-def chat(model: str, system: str, user: str, temperature: float = 0.8) -> dict:
+def chat(models, system: str, user: str, temperature: float = 0.8) -> dict:
+    """Ask Google Gemini (free tier) for a JSON answer. Tries each model in turn."""
+    if isinstance(models, str):
+        models = [models]
     body = {
-        "model": model,
-        "temperature": temperature,
-        "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"},
     }
-    candidates = _working or ENDPOINTS
+    headers = {"x-goog-api-key": env("GEMINI_API_KEY"), "Content-Type": "application/json"}
     errors = []
-    for url, extra in candidates:
-        b = dict(body)
-        if "azure.com" in url:
-            b["model"] = model.split("/")[-1]  # old endpoint uses bare model names
+    for model in (_working or models):
         r = None
         for attempt in range(4):
             try:
-                r = _post(url, extra, b)
+                r = requests.post(GEMINI.format(model=model), headers=headers, json=body, timeout=180)
             except requests.RequestException as e:
-                errors.append(f"{url} -> {type(e).__name__}")
-                print("Model endpoint failed:", errors[-1], flush=True)
+                errors.append(f"{model}: {type(e).__name__}")
                 break
-            if r.status_code == 429:  # free-tier rate limit: wait and retry
-                time.sleep(30 * (attempt + 1))
+            if r.status_code in (429, 500, 503):  # busy / free-tier limit: wait and retry
+                time.sleep(20 * (attempt + 1))
                 continue
             break
         if r is None:
             continue
         try:
-            text = r.json()["choices"][0]["message"]["content"]
+            parts = r.json()["candidates"][0]["content"]["parts"]
+            text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+            text = re.sub(r"^```(json)?|```$", "", text.strip()).strip()
+            result = json.loads(text)
         except Exception:
-            errors.append(f"{url} -> HTTP {r.status_code} {r.headers.get('content-type')} {r.text[:300]!r}")
-            print("Model endpoint failed:", errors[-1], flush=True)
+            errors.append(f"{model}: HTTP {r.status_code} {r.text[:300]}")
+            print("Model failed:", errors[-1], flush=True)
             continue
         if not _working:
-            _working.append((url, extra))
-            print("Using model endpoint:", url)
-        text = re.sub(r"^```(json)?|```$", "", text.strip()).strip()
-        return json.loads(text)
-    raise SystemExit("No GitHub Models endpoint worked:\n" + "\n".join(errors))
+            _working.append(model)
+            print("Using model:", model, flush=True)
+        return result
+    raise SystemExit("No Gemini model worked:\n" + "\n".join(errors))
 
 
 def next_topic() -> str | None:
@@ -127,7 +113,7 @@ def review(cfg: dict, script: dict) -> list[str]:
         "Style preferences go in minor_suggestions."
     )
     user = f"Audience age {cfg['show']['audience_age']}. Review this script:\n\n" + json.dumps(script, ensure_ascii=False)
-    res = chat(cfg["script"]["model"], system, user, temperature=0)
+    res = chat(cfg["script"]["models"], system, user, temperature=0)
     if res.get("minor_suggestions"):
         print("Reviewer suggestions (not blocking):", res["minor_suggestions"])
     return res.get("serious_issues") or []
@@ -167,7 +153,7 @@ def main():
     issues: list[str] = []
     for attempt in range(3):
         system, user = writer_prompt(cfg, topic, args.feedback, issues)
-        script = chat(cfg["script"]["model"], system, user)
+        script = chat(cfg["script"]["models"], system, user)
         issues = validate(cfg, script) or review(cfg, script)
         if not issues:
             break

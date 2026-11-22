@@ -14,7 +14,8 @@ show:
   catchphrase_close: "See you tomorrow, explorers!"
 
 script:
-  model: "openai/gpt-4.1-mini"     # GitHub Models (free tier)
+  # Google Gemini free tier, tried in this order (needs GEMINI_API_KEY secret)
+  models: ["gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-flash-latest"]
   min_lines: 6
   max_lines: 9
   max_words_per_line: 14

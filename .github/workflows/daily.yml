@@ -17,7 +17,6 @@ on:
 
 permissions:
   contents: write   # save episode files back to the repo
-  models: read      # free GitHub Models for script writing
 
 concurrency:
   group: repo-state
@@ -28,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       PYTHONUNBUFFERED: "1"
@@ -76,10 +75,6 @@ jobs:
         if: steps.ep.outputs.skip != 'true'
         run: |
           [ -f assets/poses/happy.png ] || python scripts/make_placeholders.py
-
-      - name: Diagnose GitHub Models (temporary)
-        if: steps.ep.outputs.skip != 'true'
-        run: mkdir -p build; python scripts/diag_models.py 2>&1 | tee -a build/log.txt || true
 
       - name: Write script
         if: steps.ep.outputs.skip != 'true'

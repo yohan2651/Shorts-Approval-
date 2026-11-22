@@ -4,7 +4,7 @@ Makes one kids' educational short every day and sends it to you on Telegram.
 You tap **✅ Approve** or **🔁 Redo**, and approved videos come back ready to post.
 
 **Daily flow**
-1. 06:07 Malaysia time: GitHub writes a script (free GitHub Models), fact-checks it,
+1. 06:07 Malaysia time: GitHub writes a script (Google Gemini free tier), fact-checks it,
    records the voice (Piper, free) and builds a 9:16 video (FFmpeg).
 2. The video arrives in Telegram with Approve / Redo buttons.
 3. **Approve** → the bot sends the final file + caption to copy.
@@ -21,12 +21,16 @@ GitHub repo → **Settings → Secrets and variables → Actions → New reposit
 - Name: `TELEGRAM_BOT_TOKEN`
 - Value: your token from @BotFather (use a fresh one — `/revoke` gives you a new token)
 
-### 2. Get your chat id
+### 2. Add a free Gemini key (writes the scripts)
+1. Go to **aistudio.google.com/apikey**, sign in, tap **Create API key**.
+2. Add it as a secret named `GEMINI_API_KEY`.
+
+### 3. Get your chat id
 1. In Telegram, open your bot and send `/start`.
 2. In GitHub, open **Actions → Check Telegram approvals → Run workflow**.
 3. The bot replies with your chat id. Add it as a second secret named `TELEGRAM_CHAT_ID`.
 
-### 3. Make your first episode
+### 4. Make your first episode
 **Actions → Make daily episode → Run workflow**. In ~5 minutes the video arrives in Telegram.
 After that it runs by itself every morning.
 
